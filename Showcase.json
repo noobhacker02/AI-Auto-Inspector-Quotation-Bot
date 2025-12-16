@@ -1,0 +1,1505 @@
+{
+  "name": "Showcase",
+  "nodes": [
+    {
+      "parameters": {
+        "chatId": "={{ $('Main Trigger').item.json.message.chat.id }}",
+        "text": "Sorry you are not Authorized to Use me 😭⛔",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1200,
+        272
+      ],
+      "id": "a8c67fb1-98a1-431e-8b66-037f8ee28c8e",
+      "name": "Send a text message1",
+      "webhookId": "4523fd8e-ff01-4376-aa59-115b93fdd019",
+      "credentials": {
+        "telegramApi": {
+          "id": "dB8uGNIPExAGTOm4",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all binary keys from this item (each corresponds to a downloaded photo)\nconst binaryKeys = Object.keys($input.item.binary || {});\n\nconst output = [];\n\n// Loop over each binary key (each represents one photo downloaded by Telegram Get File)\nfor (const key of binaryKeys) {\n    const file = $input.item.binary[key];\n\n    // Load the actual binary buffer (Cloud-safe)\n    const buffer = await this.helpers.getBinaryDataBuffer(0, key);\n\n    // Convert buffer → Base64\n    const base64 = buffer.toString('base64');\n\n    // Push a JSON object for this photo\n    output.push({\n        json: {\n            image_url: `data:${file.mimeType};base64,${base64}`,\n            caption: $input.item.json.message.caption\n        }\n    });\n}\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        -64
+      ],
+      "id": "d5913fad-3eba-4e15-b4db-2b3cfd25c9a5",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <key>"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"mistral-small-2506\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": {{ JSON.stringify($json.prompt) }}\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": {{ JSON.stringify($json.image) }}\n          }\n        }\n      ]\n    }\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -704,
+        -64
+      ],
+      "id": "c5ac6df0-50ca-4320-957d-f55890b7381f",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n    \"prompt\": \"You are an automated visual inspector for FRONT-of-car images. You may receive one or more images. For each image (identified by image_id) scan ONLY what is visible. Do NOT infer internal damage or off-frame parts.\\\\n\\\\nParts to check: headlight_left, headlight_right, bumper, hood, windshield.\\\\n\\\\nFor each part per image: if not visible -> visible_status: \\\"not visible\\\". If visible and undamaged -> visible_issue: \\\"no visible damage\\\". If damaged -> visible_issue in {bent, hail, broken, unclear}.\\\\n\\\\nDamage level: 1-10 or \\\"unclear\\\". Confidence: high | medium | low. Include relative location if visible. Include bbox (normalized) or null if not available. Continue scanning all parts even after finding critical issues.\\\\n\\\\nReturn an array of objects: {\\\"image_id\\\":\\\"...\\\",\\\"per_image_assessment\\\":[{...}],\\\"notes\\\":\\\"...\\\"}. Return ONLY valid JSON; no other text.\",\n  \"input\":\"{{ $json.caption }}\",\n  \"image\":\"{{ $json.image_url }}\"\n}\n ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -864,
+        -64
+      ],
+      "id": "4c4afd12-e54f-471e-a5a3-7470b5886801",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=user name - {{ $json.whom }}\nsays - {{ $json.input_text }}\nwhom id - \"{{ $json.whom_id }}\"",
+        "hasOutputParser": true,
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=today is  {{ $today }}\nYou are a single agent for automotive image inspection and quoting.\nthe tools you have is calendar booking date Telegram quotation tool and Gmail-email sending (which is a n8n workflow) \n\nthe flow of the conversation will be like\nonce you and after receiving the damages photo instantly tell them about the damages\n\nafter that ask their car type like sedan or SUV and their country as that will be needed later\n\nthen tell them about the damages and total cost on those things by getting information from the google sheets as said below\n\nand after all price giving and conversation ask if the user wants to book and confirm the appointment so use google calender tool to save the appointment by booking of xyz customer(whatever his or her name) \n\nand with calendar booking ask user if they want to send them a quotation if so provide them 2 options mail or telegram and \n\nif email - ask for email and send all details like email name and requirements parts information and type like all details which will be needed for the quotation to email tool\n\nif telegram - and if user ask for quotation on telegram send all information needed by the tool Telegram quotation and once you recive successful from the tool now tell the user okay done\n\n \n\\n\\nRULES:\\n- Receive per-image assessments, merge them at part-level (headlight_left, headlight_right, bumper, hood, windshield) using: highest damage_level → higher confidence → else include all source_image_ids.\\n- Map recommended_action → DPR | DPR + repaint | full replacement | no action.\\n- If damage_level is unclear OR confidence is low, mark requires_manual_review and estimated_cost = 'estimate_unavailable'.\\n- Pricing requires car_type (sedan|SUV|luxury) AND country (UAE|Germany|Japan). Ask ONLY for missing values.\\n- Aggregate costs and unresolved_parts_count internally.\\n\\nOUTPUT:\\n- Respond ONLY in JSON, no extra text.\\n- Include for user-facing output:\\n{\\n  \\\"output\\\": \\\"<professional short summary of visible damage, next steps, and cost if available>\\\",\\n  \\\"whom_id\\\": \\\"<user id>\\\",\\n  \\\"ready_to_send_email\\\": true|false, \\n  \\\"ready_to_book\\\": true|false,\\n  \\\"missing_info\\\": {\\\"email\\\": \\\"\\\", \\\"date_time\\\": \\\"\\\"}\\n}\\n- Do not mention AI, images, tools, or internal logic.\\n- Ask only for missing inputs or user agreement.\n\nYou MUST output ONLY a single JSON object and nothing else. No text, no markdown, no code fences.\nThe JSON object MUST have these keys exactly:\n- output (string)\n- whom_id (string)\n- ready_to_send_email (boolean)\n- ready_to_book (boolean)\n- missing_info (object with keys \"email\" (string) and \"date_time\" (string))\n\nExample of valid output (must match types and double quotes):\n{\n  \"output\": \"It looks like your car has a broken windshield, which will need a full replacement, and visible hail damage on the hood. The hood damage appears repairable, but the windshield is a priority for safety. To help you move forward, could you please share the make and model of your car?\",\n  \"whom_id\": \"887679876\"\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        608,
+        -144
+      ],
+      "id": "2961d173-5db4-4349-8287-ec223babc6cd",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "id": "1779406d-c0a3-4830-87e6-ce27b3447c2a",
+      "name": "Main Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "position": [
+        -1888,
+        32
+      ],
+      "webhookId": "6d90bff2-32dd-44fc-b11b-4217a615dfed",
+      "typeVersion": 1.2,
+      "credentials": {
+        "telegramApi": {
+          "id": "dB8uGNIPExAGTOm4",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "926c116e-93a1-434e-b549-77b22b628b7c",
+                    "leftValue": "={{ $json.message.chat.id }}",
+                    "rightValue": 887679876,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ace7a263-1125-4e12-ad36-6f9bb2d40d42",
+                    "leftValue": "={{ $json.message.chat.id }}",
+                    "rightValue": 887679876,
+                    "operator": {
+                      "type": "number",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -1696,
+        32
+      ],
+      "id": "039d349a-d97f-4a42-9d9b-eb0b14ac8acb",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "3421ce54-2c7c-4c87-ab7f-a4598eaa7f6b",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": ""
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "85c06561-3e1d-4871-af64-f08e5f657b24",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": ""
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a3391fff-3999-477b-a86e-dab272fa8834",
+      "name": "Image or Text",
+      "type": "n8n-nodes-base.switch",
+      "position": [
+        -1184,
+        -416
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "01472fc3-d745-4c7c-ac5b-aa3ea5fca8d5",
+              "name": "input_text",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "84ba099d-a6e7-425a-874a-96215c39b223",
+              "name": "whom",
+              "value": "={{ $json.message.from.first_name }} {{ $json.message.from.last_name }}",
+              "type": "string"
+            },
+            {
+              "id": "45c70dfa-6b10-4347-bffb-7b32a9d110f0",
+              "name": "whom_id",
+              "value": "={{ $json.message.from.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -16,
+        -400
+      ],
+      "id": "826cfe36-06b0-49a2-af96-58d4d00418d2",
+      "name": "Text Input"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a3a37702-9c5c-4e2c-9d4f-af112c1479c1",
+              "name": "input_text",
+              "value": "={{ $json.input }}",
+              "type": "string"
+            },
+            {
+              "id": "b7bf6927-6efa-4e98-8660-59ed06a68ab2",
+              "name": "whom",
+              "value": "={{ $json.whom }}",
+              "type": "string"
+            },
+            {
+              "id": "b31dcce3-3d9a-46ff-a88f-28bbf9a8690e",
+              "name": "whom_id",
+              "value": "={{ $json.whom_id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -16,
+        -144
+      ],
+      "id": "e79f445a-74a3-4935-a5b1-1e51fb4fde14",
+      "name": "Image input"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4e660405-5000-4851-9078-bd956385606d",
+              "name": "whom",
+              "value": "={{ $json.message.from.first_name }} {{ $json.message.from.last_name }}",
+              "type": "string"
+            },
+            {
+              "id": "858e649e-6ebe-4a03-85ee-8f5af40d590d",
+              "name": "whom_id",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -544,
+        -224
+      ],
+      "id": "81a52df1-4317-48f0-91e6-df5bb2345e43",
+      "name": "Image whom"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -384,
+        -144
+      ],
+      "id": "77a7a5df-01f0-4733-b366-00d52daceb6c",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "da30434d-c8ef-49f7-8dfd-f4fe3154184a",
+              "name": "input",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -544,
+        -64
+      ],
+      "id": "76a04242-28b5-45f6-b7a1-2463a78b6a04",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const combined = {};\nfor (const item of items) {\n  Object.assign(combined, item.json);\n}\nreturn [{ json: combined }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        -144
+      ],
+      "id": "ec8e2783-1177-40a3-96d3-ac28be8b3837",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.output.whom_id }}",
+        "text": "={{ $json.output.output }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1504,
+        -144
+      ],
+      "id": "6a28a790-4c7e-488b-914e-a7d0152c984e",
+      "name": "Send a text message",
+      "webhookId": "b8420f35-0c33-468f-b0ae-a27f2f7ea019",
+      "credentials": {
+        "telegramApi": {
+          "id": "dB8uGNIPExAGTOm4",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"output\": \"It looks like your car has a broken windshield, which will need a full replacement, and visible hail damage on the hood. The hood damage appears repairable, but the windshield is a priority for safety. To help you move forward, could you please share the make and model of your car?\",\n  \"whom_id\": \"8430909824\"\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1856,
+        272
+      ],
+      "id": "3ac8ea96-ff2a-4415-97a2-9a0ab644499b",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.whom_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        544,
+        272
+      ],
+      "id": "1a9eb11b-305a-47cd-82fc-f6816f5f0bb7",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-flash-latest",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        352,
+        272
+      ],
+      "id": "bdf03784-6bf3-417b-96e7-90f97fbf52d6",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7jdgvVkhxotqYHsh",
+          "name": "apextelen8n"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "mistralai/devstral-2512:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        160,
+        272
+      ],
+      "id": "e8abeeee-6f29-43f6-bf8b-ca7e0b6bd766",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "XwYP0GX06MsCWy21",
+          "name": "TS OpenRouter 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "You are a pricing lookup tool. There is one Google Sheet per country (UAE, Germany, Japan). Each sheet has columns: part | action | car_type | cost | currency | notes.\\\\n\\\\nInput: an array of lookup requests, each { part, action, car_type } plus the country to query.\\\\n\\\\nLookup priority: 1) exact match (part + action + car_type). 2) fallback (part + action + car_type = any). 3) fallback (part + action = any + car_type) only if action not present. If nothing found return estimated_cost = \\\"estimate_unavailable\\\".\\\\n\\\\nRules: Do NOT convert currencies. If multiple rows match return the lowest cost and include concatenated notes. If car_type or action is missing, return requires_user_input = true for that request. If damage confidence is low or damage_level is \\\"unclear\\\", include notes and set estimated_cost to \\\"estimate_unavailable\\\" when appropriate.\\\\n\\\\nOutput (JSON array), example item: {\\\"part\\\":\\\"hood\\\",\\\"action\\\":\\\"DPR + repaint\\\",\\\"car_type\\\":\\\"sedan\\\",\\\"cost\\\":450,\\\"currency\\\":\\\"AED\\\",\\\"notes\\\":\\\"Includes paint and labour\\\",\\\"source_row\\\":12} or {\\\"part\\\":\\\"bumper\\\",\\\"action\\\":\\\"DPR\\\",\\\"car_type\\\":\\\"luxury\\\",\\\"estimated_cost\\\":\\\"estimate_unavailable\\\",\\\"currency\\\":\\\"AED\\\",\\\"notes\\\":\\\"no matching row found\\\"}.",
+        "documentId": {
+          "__rl": true,
+          "value": "1KsBgq7rWe2HhMC3evWrQ1CySC6KEml0NZp3wMISGcqc",
+          "mode": "list",
+          "cachedResultName": "car_repair_pricing",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KsBgq7rWe2HhMC3evWrQ1CySC6KEml0NZp3wMISGcqc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Sheet', ``, 'string') }}"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        912,
+        272
+      ],
+      "id": "5b2be3fa-4313-4f21-bddd-e48e44619d90",
+      "name": "Get row(s) in sheet in Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0zvLPkHjnaXibUtd",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "=<email>",
+          "mode": "id"
+        },
+        "useDefaultReminders": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Use_Default_Reminders', ``, 'boolean') }}",
+        "additionalFields": {
+          "description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Description', ``, 'string') }}",
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        720,
+        272
+      ],
+      "id": "8ba9bfc5-2068-4625-9bd9-9da2f030ab20",
+      "name": "Create an event in Google Calendar",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "FWqoMQd62MljN2lu",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "call this tool to send over all information needed to make a quotation email \nmandatory information needed is \n-email\n- user name\n- damage_details_assessment\n- booking_time_if_given",
+        "workflowId": {
+          "__rl": true,
+          "value": "WE6xn1PPX7gwrksW",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/WE6xn1PPX7gwrksW",
+          "cachedResultName": "test_Gmail_workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('email', ``, 'string') }}",
+            "name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('name', ``, 'string') }}",
+            "damage_details_assessment": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('damage_details_assessment', ``, 'string') }}",
+            "booking_time_if_given": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('booking_time_if_given', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "damage_details_assessment",
+              "displayName": "damage_details_assessment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "booking_time_if_given",
+              "displayName": "booking_time_if_given",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        512
+      ],
+      "id": "22240636-4274-4023-9a18-8dd8b00da519",
+      "name": "Gmail-email sending"
+    },
+    {
+      "parameters": {
+        "toolDescription": "make an http request and call this tool to send over all information needed to make a quotation pdf link\nmandatory information needed is \n-email\n- user name\n- damage_details_assessment\n- booking_time_if_given\n- Chat_id",
+        "method": "POST",
+        "url": "https://noahtalha.app.n8n.cloud/webhook/91059",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=email",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters0_Value', ``, 'string') }}"
+            },
+            {
+              "name": "user_name",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters1_Value', ``, 'string') }}"
+            },
+            {
+              "name": "damage_details_assessment",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters2_Value', ``, 'string') }}"
+            },
+            {
+              "name": "booking_time_if_given",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters3_Value', ``, 'string') }}"
+            },
+            {
+              "name": "chat_id",
+              "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parameters4_Value', ``, 'string') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1440,
+        496
+      ],
+      "id": "abe77d6a-7f0e-4e4b-aedb-cc1f6a3c9e6b",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "content": "## 🚗 Automated Car Inspection & Quoting Bot\nWorkflow Overview: This workflow acts as a Telegram bot that accepts text or images. If an image is received, it uses Computer Vision (Mistral) to assess car damage. It then uses an AI Agent (LangChain) to consult pricing sheets, book appointments, and send quotations via Email or Telegram.",
+        "width": 640
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2720,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "792145d0-46e9-4c80-8b65-da573073a0f3",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Trigger & Security Layer\nMain Trigger (Telegram): Listens for incoming messages.\n\nSecurity Check (Switch):\n\nLogic: Verifies if chat.id equals 8430909824.\n\nRoute 1 (Authorized): Proceed to processing.\n\nRoute 2 (Unauthorized): Routes to Send a text message1 which replies: \"Sorry you are not Authorized to Use me 😭⛔\".",
+        "height": 272,
+        "width": 720,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1808,
+        480
+      ],
+      "typeVersion": 1,
+      "id": "5910bb82-1e35-4f19-be2a-2048b22638f6",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Input Routing (Text vs. Image)\nImage or Text (Switch): checks if message.text exists.\n\nPath A (Text): Routes to Text Input (Sets input_text).\n\nPath B (Image): Routes to the Image Processing Pipeline.",
+        "height": 208,
+        "width": 448,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1280,
+        -656
+      ],
+      "typeVersion": 1,
+      "id": "11a58611-25d3-4037-b05d-45dee6e70bbd",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Image Processing Pipeline\nCode in JavaScript: Downloads the binary file from Telegram and converts the buffer to a Base64 string.\n\nEdit Fields2: Prepares the JSON payload for the Vision API.\n\nHTTP Request1 (Mistral Vision): Sends the image to api.mistral.ai with a prompt to act as a visual inspector (detecting dents, scratches, etc.).\n\nEdit Fields: Extracts the text analysis from the Mistral response.\n\nMerge & Code: Merges the User ID details with the Vision analysis text.\n\nImage input: Formats the final payload to be passed to the AI Agent.",
+        "height": 304,
+        "width": 720,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -816,
+        144
+      ],
+      "typeVersion": 1,
+      "id": "4eabb841-3329-4d77-8e70-fba4f4e86b8d",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "The AI Core (LangChain Agent)\n## AI Agent: The central brain of the operation.\n\nSystem Prompt: Acts as an automotive inspector. It orchestrates the flow: Analyze Damage → Ask Car Type/Country → Lookup Price → Book Date → Send Quote.\n\nOutput Requirement: Strictly enforces a JSON output containing output (msg to user), ready_to_book, missing_info, etc.\n\nModels:\n\nGoogle Gemini Chat Model: Primary LLM.\n\nOpenRouter Chat Model: Backup/Alternative LLM.\n\nSimple Memory: Stores conversation history using the Telegram chat_id as the session key.\n\nStructured Output Parser: Ensures the Agent returns valid JSON for the workflow to parse.",
+        "height": 400,
+        "width": 912,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        480,
+        -624
+      ],
+      "typeVersion": 1,
+      "id": "3461c175-7092-4061-908e-2184d1354487",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## Agent Tools (Capabilities)\nThe Agent has access to the following tools to perform actions:\n\nGet row(s) in sheet (Google Sheets):\n\nFunction: Looks up repair prices based on Part, Action, and Car Type.\n\nLogic: Falls back to estimates if exact matches aren't found.\n\nCreate an event (Google Calendar):\n\nFunction: Books the repair appointment using the user's email (talhatalha1971@gmail.com as the host).\n\nGmail-email sending (Workflow Tool):\n\nFunction: Calls a sub-workflow (WE6xn1PPX7gwrksW) to send a formatted quotation email.\n\nHTTP Request (Telegram Quote):\n\nFunction: Calls a webhook to generate/send a PDF quotation link via Telegram.\n\n6. Response Delivery\nSend a text message: Takes the parsed text from the Agent's JSON output ($json.output.output) and sends it back to the user on Telegram.",
+        "height": 512,
+        "width": 1040,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        80,
+        480
+      ],
+      "typeVersion": 1,
+      "id": "3d72b38b-bf9d-4393-9b1f-1e2dce14382a",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "## 🔗 Integration Map: How they fit together\nTo make the whole system work, ensure the Main Workflow (from part 1) is configured to call these two components:\n\nFor PDF/Telegram:\n\nUse an HTTP Request Node in the Main Workflow.\n\nMethod: POST\n\nURL: The Production URL of the Webhook node in \"Workflow 2\".\n\nBody: Send the JSON fields (chat_id, damage_details_assessment, etc.).\n\nFor Email:\n\nUse an Execute Workflow Node in the Main Workflow.\n\nSource: Select \"Workflow 3\" (Gmail Dispatcher).\n\nPass Data: Ensure \"All Input Data\" or specific JSON fields are passed.\n\n🛠️ Configuration Checklist\n[ ] HTML to PDF API: Account connected in Workflow 2.\n\n[ ] Telegram Bot Token: Connected in Workflow 2.\n\n[ ] Gmail OAuth: Connected in Workflow 3.\n\n[ ] Production URLs: Ensure the Webhook in Workflow 2 is set to \"Production\" URL when you go live, otherwise the Main Workflow won't find it.",
+        "height": 656,
+        "width": 688,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1264,
+        736
+      ],
+      "typeVersion": 1,
+      "id": "9a322510-27c7-4356-86b6-b2c4d0a871f6",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "9a008a61-9957-400c-9895-74e808691059",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        96,
+        1552
+      ],
+      "id": "fb696425-2f3f-4536-80f7-5e1cdb119da8",
+      "name": "Webhook",
+      "webhookId": "9a008a61-9957-400c-9895-74e808691059"
+    },
+    {
+      "parameters": {
+        "html_content": "={{ $json.output }}",
+        "output_format": "file"
+      },
+      "type": "n8n-nodes-htmlcsstopdf.htmlcsstopdf",
+      "typeVersion": 1,
+      "position": [
+        624,
+        1552
+      ],
+      "id": "73f638a1-3f72-4b03-aeaf-af8eee5c8904",
+      "name": "HTML to PDF",
+      "credentials": {
+        "htmlcsstopdfApi": {
+          "id": "D2y4lUkHCjS8uos5",
+          "name": "HTML to PDF account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendDocument",
+        "chatId": "={{ $('Webhook').item.json.body.chat_id }}",
+        "binaryData": true,
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        832,
+        1552
+      ],
+      "id": "ea2ccf96-1a06-47f8-9502-29a5c0798592",
+      "name": "Send a document",
+      "webhookId": "c3c097fb-4028-4c36-87be-89539f12fb32",
+      "credentials": {
+        "telegramApi": {
+          "id": "dB8uGNIPExAGTOm4",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Sucessfully send telegram quatation now talk with user ahead",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1056,
+        1552
+      ],
+      "id": "19483a7e-111e-4a25-b2eb-bd5d4b5b51ce",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=email is  {{ $json.body.email }}\nname is {{ $json.body.user_name }}\nwhole damage assement is  {{ $json.body.damage_details_assessment }}\nbooking time if given is {{ $json.body.booking_time_if_given }}",
+        "options": {
+          "systemMessage": "SYSTEM:\nYou are a strict HTML document generator.\n\nYour task:\n- Take the provided HTML template.\n- Insert the provided data wherever it is logically required in the document.\n- Preserve the structure, layout, styles, and formatting exactly as given.\n- Add dynamic values only where they naturally belong (names, email, damage assessment content, booking time if present).\n- Do not invent new sections, styles, or markup.\n\nCritical rules (must follow strictly):\n1. Output ONLY a single, complete HTML document.\n2. No explanations, no markdown, no code fences, no comments outside HTML.\n3. Do not mention tools, AI, prompts, logic, or variables.\n4. If any data is missing, leave the relevant area empty.\n5. If booking time is not provided, completely remove the nearest logical block that references appointment or booking time so the layout stays clean.\n6. Escape dynamic text for HTML safety.\n7. The output must begin with `<!DOCTYPE html>` and be valid HTML5.\n8. Do not change colors, spacing, typography, or table structure.\n9. Do not add placeholder text such as “N/A” or “Not provided”.\n\nContext available to you:\n- Customer identity information\n- Damage assessment content\n- Optional booking time\n\nHTML TEMPLATE (ADD DATA WHEREVER NEEDED — DO NOT CHANGE STRUCTURE):\n---HTML_TEMPLATE_START---\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Quotation - TS Cars Globals</title>\n    <style>\n        /* Resets to ensure consistent rendering across clients */\n        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }\n        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }\n        img { -ms-interpolation-mode: bicubic; }\n        \n        /* General Resets */\n        body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #f4f4f4; }\n        \n        /* Mobile Responsive Styles */\n        @media screen and (max-width: 600px) {\n            .email-container { width: 100% !important; }\n            .col-split { display: block !important; width: 100% !important; padding-bottom: 20px; }\n        }\n    </style>\n</head>\n<body style=\"margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f4f4f4; color: #333333;\">\n\n    <!-- Outer Wrapper -->\n    <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"background-color: #f4f4f4; padding: 40px 0;\">\n        <tr>\n            <td align=\"center\">\n                \n                <!-- Main Email Container (Max Width 600px for Standard Email Layout) -->\n                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" class=\"email-container\" style=\"background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05);\">\n                    \n                    <!-- Header Section -->\n                    <tr>\n                        <td align=\"center\" style=\"background-color: #1a2b49; padding: 30px 20px;\">\n                            <!-- Placeholder for Logo -->\n                            <h1 style=\"color: #ffffff; margin: 0; font-size: 28px; letter-spacing: 1px; text-transform: uppercase;\">TS Cars Globals</h1>\n                            <p style=\"color: #aebfd6; margin: 5px 0 0 0; font-size: 12px; letter-spacing: 2px; text-transform: uppercase;\">Germany &bull; UAE &bull; Japan</p>\n                        </td>\n                    </tr>\n\n                    <!-- Branding / Context Section -->\n                    <tr>\n                        <td style=\"padding: 30px 40px; border-bottom: 1px solid #eeeeee;\">\n                            <h2 style=\"margin: 0 0 10px 0; color: #1a2b49; font-size: 20px;\">Service Quotation</h2>\n                            <p style=\"margin: 0; color: #666666; font-size: 14px; line-height: 1.5;\">\n                                Global specialists in high-performance Paintless Dent Repair (PDR), industrial hail damage solutions, and automotive claims management.\n                            </p>\n                        </td>\n                    </tr>\n\n                    <!-- Bill Details Section -->\n                    <tr>\n                        <td style=\"padding: 0 40px;\">\n                            \n                            <!-- Invoice Meta Data -->\n                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"margin-top: 20px; margin-bottom: 20px;\">\n                                <tr>\n                                    <td width=\"50%\" valign=\"top\" style=\"padding-bottom: 20px;\">\n                                        <strong style=\"color: #1a2b49; font-size: 12px; text-transform: uppercase;\">Bill To:</strong><br>\n                                        <span style=\"font-size: 14px; line-height: 1.6;\">\n                                            Premium Auto Dealers Assoc.<br>\n                                            Attn: Claims Department\n                                        </span>\n                                    </td>\n                                    <td width=\"50%\" valign=\"top\" align=\"right\" style=\"padding-bottom: 20px;\">\n                                        <strong style=\"color: #1a2b49; font-size: 12px; text-transform: uppercase;\">Date:</strong> <span style=\"font-size: 14px;\">December 15, 2025</span><br>\n                                        <strong style=\"color: #1a2b49; font-size: 12px; text-transform: uppercase;\">Quote #:</strong> <span style=\"font-size: 14px;\">TSC-2025-8842</span>\n                                    </td>\n                                </tr>\n                            </table>\n\n                            <!-- Line Items Table -->\n                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"border-collapse: collapse;\">\n                                <!-- Table Header -->\n                                <tr style=\"background-color: #f8f9fa;\">\n                                    <td style=\"padding: 12px; border-bottom: 2px solid #1a2b49; font-weight: bold; color: #1a2b49; font-size: 13px; text-transform: uppercase;\">Description</td>\n                                    <td align=\"right\" style=\"padding: 12px; border-bottom: 2px solid #1a2b49; font-weight: bold; color: #1a2b49; font-size: 13px; text-transform: uppercase;\">Amount (AED)</td>\n                                </tr>\n\n                                <!-- Vehicle Header -->\n                                <tr>\n                                    <td colspan=\"2\" style=\"padding: 15px 12px 5px 12px; font-weight: bold; color: #333333; font-size: 14px;\">\n                                        Vehicle 1: Sedan\n                                    </td>\n                                </tr>\n\n                                <!-- Item 1 -->\n                                <tr>\n                                    <td style=\"padding: 8px 12px 8px 24px; border-bottom: 1px solid #eeeeee; color: #555555; font-size: 14px;\">\n                                        Hood - Hail Damage (DPR + Repaint)\n                                    </td>\n                                    <td align=\"right\" style=\"padding: 8px 12px; border-bottom: 1px solid #eeeeee; color: #333333; font-size: 14px;\">\n                                        450.00\n                                    </td>\n                                </tr>\n\n                                <!-- Item 2 -->\n                                <tr>\n                                    <td style=\"padding: 8px 12px 8px 24px; border-bottom: 1px solid #eeeeee; color: #555555; font-size: 14px;\">\n                                        Windshield - Broken (Full Replacement)\n                                    </td>\n                                    <td align=\"right\" style=\"padding: 8px 12px; border-bottom: 1px solid #eeeeee; color: #333333; font-size: 14px;\">\n                                        600.00\n                                    </td>\n                                </tr>\n\n                                <!-- Subtotal -->\n                                <tr>\n                                    <td align=\"right\" style=\"padding: 15px 12px 5px 12px; font-weight: bold; color: #666666; font-size: 13px; text-transform: uppercase;\">Subtotal</td>\n                                    <td align=\"right\" style=\"padding: 15px 12px 5px 12px; font-weight: bold; color: #666666; font-size: 14px;\">1,050.00</td>\n                                </tr>\n\n                                <!-- Grand Total -->\n                                <tr>\n                                    <td align=\"right\" style=\"padding: 5px 12px 20px 12px; border-top: 0;\"></td>\n                                    <td align=\"right\" style=\"padding: 5px 12px 20px 12px; border-top: 2px solid #1a2b49; color: #1a2b49; font-size: 18px; font-weight: bold; background-color: #fcfcfc;\">\n                                        <span style=\"font-size: 12px; font-weight: normal; vertical-align: middle; margin-right: 5px;\">AED</span>1,050.00\n                                    </td>\n                                </tr>\n                            </table>\n\n                        </td>\n                    </tr>\n\n                    <!-- Call to Action / Notes -->\n                    <tr>\n                        <td style=\"padding: 0 40px 30px 40px;\">\n                            <p style=\"margin: 0; font-size: 13px; color: #777777; font-style: italic; line-height: 1.5;\">\n                                <strong>Disclaimer:</strong> This is an autogenerated quotation based on preliminary data. All prices are approximate and not fixed. Final costs must be confirmed upon physical inspection of the vehicle(s) by our technical team.<br><br>\n                                * This quotation is valid for 14 days. Please contact us to schedule the repair at our nearest industrial facility.\n                            </p>\n                        </td>\n                    </tr>\n\n                    <!-- Footer Section -->\n                    <tr>\n                        <td align=\"center\" style=\"background-color: #1a2b49; padding: 30px 20px;\">\n                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\">\n                                <tr>\n                                    <td align=\"center\" style=\"color: #ffffff; font-size: 14px; font-weight: bold; padding-bottom: 10px;\">\n                                        TS Cars Globals\n                                    </td>\n                                </tr>\n                                <tr>\n                                    <td align=\"center\" style=\"color: #aebfd6; font-size: 12px; line-height: 1.6;\">\n                                        Smart Repair &bull; Major Damage &bull; Claims Management<br>\n                                        Serving Manufacturers & Insurers Globally\n                                    </td>\n                                </tr>\n                                <tr>\n                                    <td align=\"center\" style=\"padding-top: 20px;\">\n                                        <a href=\"#\" style=\"color: #ffffff; text-decoration: none; font-size: 12px; margin: 0 10px;\">Germany Office</a>\n                                        <span style=\"color: #4a5b79;\">|</span>\n                                        <a href=\"#\" style=\"color: #ffffff; text-decoration: none; font-size: 12px; margin: 0 10px;\">UAE Office</a>\n                                        <span style=\"color: #4a5b79;\">|</span>\n                                        <a href=\"#\" style=\"color: #ffffff; text-decoration: none; font-size: 12px; margin: 0 10px;\">Japan Office</a>\n                                    </td>\n                                </tr>\n                                <tr>\n                                    <td align=\"center\" style=\"padding-top: 20px; color: #5c6f91; font-size: 11px;\">\n                                        &copy; 2025 TS Cars Globals. All rights reserved.\n                                    </td>\n                                </tr>\n                            </table>\n                        </td>\n                    </tr>\n\n                </table>\n                <!-- End Main Email Container -->\n\n            </td>\n        </tr>\n    </table>\n\n</body>\n</html>\n---HTML_TEMPLATE_END---\n\nFINAL INSTRUCTION:\nReturn ONLY the final HTML document after inserting the data where appropriate.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        304,
+        1552
+      ],
+      "id": "180ee9d7-e3ad-4bf2-a2fb-6bd82ad8d582",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": "mistralai/devstral-2512:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        304,
+        1760
+      ],
+      "id": "698a82a1-0468-42c7-ba6a-be129832bf57",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "XwYP0GX06MsCWy21",
+          "name": "TS OpenRouter 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Workflow 2: PDF Generator & Telegram Delivery\nDescription: This workflow is a \"Microservice\" that receives raw quotation data via a Webhook, converts it into a branded HTML document, renders that as a PDF, and sends it directly to the user's Telegram.",
+        "width": 720
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        96,
+        1312
+      ],
+      "typeVersion": 1,
+      "id": "073b210b-698d-4073-bbf2-2b81f4589513",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Input Layer\nWebhook (POST):\n\nEndpoint: .../webhook/9a008a61-9957-400c-9895-74e808691059\n\nPayload Expectations: Requires email, user_name, damage_details_assessment, booking_time_if_given, and chat_id.\n\nRole: Acts as the listener for the main workflow.",
+        "height": 256,
+        "width": 432,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -416,
+        1504
+      ],
+      "typeVersion": 1,
+      "id": "94788d09-f192-4d35-a5a3-e6c812a25d2c",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Conversion & Delivery\nHTML to PDF:\n\nAction: Takes the clean HTML string from the Agent and renders it into a binary PDF file.\n\nCredentials: Requires an API key for the HTML-to-PDF service.\n\nSend a document (Telegram):\n\nAction: Uploads the generated PDF binary to the chat specified by chat_id.\n\nRespond to Webhook:\n\nAction: Returns a success message to the Main Workflow so it knows the PDF was delivered.",
+        "height": 320,
+        "width": 720,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        976,
+        1712
+      ],
+      "typeVersion": 1,
+      "id": "cee216e5-7d29-4a87-880f-23ffad0efa92",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "## 2. The Document Engine (AI Agent)\nAI Agent (Template Engineer):\n\nRole: Instead of using complex regex to fill the HTML template, this agent acts as an intelligent \"Find & Replace\" engine.\n\nSystem Prompt: Contains a strict, hardcoded HTML5 template with CSS for \"TS Cars Globals\".\n\nLogic: It inserts the user's name, damage details, and costs into the HTML structure without breaking the layout or adding Markdown/Conversational text.\n\nModel: Uses OpenRouter (Mistral) for cost-effective HTML generation.",
+        "height": 272,
+        "width": 704,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        144,
+        1904
+      ],
+      "typeVersion": 1,
+      "id": "7816aa3c-f74a-4b23-978c-41cb323822e7",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"email\": \"talha1971@gmail.com\",\n  \"name\":\"Talha Shaikh\",\n  \"damage_details_assessment\": \"Vehicle 1 (Sedan): Hood - Hail damage (Full Replacement): 1,500 AED, Windshield - Broken (Full Replacement): 600 AED,Subtotal: 2,100 AED,Vehicle 2 (SUV): Hood - Hail damage (Full Replacement): 1,600 AED, Windshield - Broken (Full Replacement): 800 AED,Subtotal: 2,400 AED,GRAND TOTAL: 2,100 AED\",\n  \"booking_time_if_given\": \"12 pm asia/dubai 12/12/2025\"\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        2208,
+        1536
+      ],
+      "id": "f4a5c2f3-7e81-43c8-b98d-eba93ddecc3f",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('To', ``, 'string') }}",
+        "subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+        "message": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Message', ``, 'string') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        2704,
+        1776
+      ],
+      "id": "74861533-c8f8-4890-b4c9-c8adf7b0e3e2",
+      "name": "Send a message in Gmail",
+      "webhookId": "6af2ff90-6ad7-4717-8705-01b570340774",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AJXl9EJnSUdNNPIG",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=email is {{ $json.email }}\nname is {{ $json.name }}\nwhole damage_details_assessment is {{ $json.damage_details_assessment }}\nif booking_time_if_given {{ $json.booking_time_if_given }}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "You are a helpful emailer of quatation sending\nyou will recive all details emails name and quatation you need to follow this below template and send email to the custumer \n\ntemplate - \"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Quotation - TS Cars Globals</title>\n    <style>\n        /* Resets to ensure consistent rendering across clients */\n        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }\n        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }\n        img { -ms-interpolation-mode: bicubic; }\n        \n        /* General Resets */\n        body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #f4f4f4; }\n        \n        /* Mobile Responsive Styles */\n        @media screen and (max-width: 600px) {\n            .email-container { width: 100% !important; }\n            .col-split { display: block !important; width: 100% !important; padding-bottom: 20px; }\n        }\n    </style>\n</head>\n<body style=\"margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f4f4f4; color: #333333;\">\n\n    <!-- Outer Wrapper -->\n    <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"background-color: #f4f4f4; padding: 40px 0;\">\n        <tr>\n            <td align=\"center\">\n                \n                <!-- Main Email Container (Max Width 600px for Standard Email Layout) -->\n                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" class=\"email-container\" style=\"background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05);\">\n                    \n                    <!-- Header Section -->\n                    <tr>\n                        <td align=\"center\" style=\"background-color: #1a2b49; padding: 30px 20px;\">\n                            <!-- Placeholder for Logo -->\n                            <h1 style=\"color: #ffffff; margin: 0; font-size: 28px; letter-spacing: 1px; text-transform: uppercase;\">TS Cars Globals</h1>\n                            <p style=\"color: #aebfd6; margin: 5px 0 0 0; font-size: 12px; letter-spacing: 2px; text-transform: uppercase;\">Germany &bull; UAE &bull; Japan</p>\n                        </td>\n                    </tr>\n\n                    <!-- Branding / Context Section -->\n                    <tr>\n                        <td style=\"padding: 30px 40px; border-bottom: 1px solid #eeeeee;\">\n                            <h2 style=\"margin: 0 0 10px 0; color: #1a2b49; font-size: 20px;\">Service Quotation</h2>\n                            <p style=\"margin: 0; color: #666666; font-size: 14px; line-height: 1.5;\">\n                                Global specialists in high-performance Paintless Dent Repair (PDR), industrial hail damage solutions, and automotive claims management.\n                            </p>\n                        </td>\n                    </tr>\n\n                    <!-- Bill Details Section -->\n                    <tr>\n                        <td style=\"padding: 0 40px;\">\n                            \n                            <!-- Invoice Meta Data -->\n                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"margin-top: 20px; margin-bottom: 20px;\">\n                                <tr>\n                                    <td width=\"50%\" valign=\"top\" style=\"padding-bottom: 20px;\">\n                                        <strong style=\"color: #1a2b49; font-size: 12px; text-transform: uppercase;\">Bill To:</strong><br>\n                                        <span style=\"font-size: 14px; line-height: 1.6;\">\n                                            Premium Auto Dealers Assoc.<br>\n                                            Attn: Claims Department\n                                        </span>\n                                    </td>\n                                    <td width=\"50%\" valign=\"top\" align=\"right\" style=\"padding-bottom: 20px;\">\n                                        <strong style=\"color: #1a2b49; font-size: 12px; text-transform: uppercase;\">Date:</strong> <span style=\"font-size: 14px;\">December 15, 2025</span><br>\n                                        <strong style=\"color: #1a2b49; font-size: 12px; text-transform: uppercase;\">Quote #:</strong> <span style=\"font-size: 14px;\">TSC-2025-8842</span>\n                                    </td>\n                                </tr>\n                            </table>\n\n                            <!-- Line Items Table -->\n                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"border-collapse: collapse;\">\n                                <!-- Table Header -->\n                                <tr style=\"background-color: #f8f9fa;\">\n                                    <td style=\"padding: 12px; border-bottom: 2px solid #1a2b49; font-weight: bold; color: #1a2b49; font-size: 13px; text-transform: uppercase;\">Description</td>\n                                    <td align=\"right\" style=\"padding: 12px; border-bottom: 2px solid #1a2b49; font-weight: bold; color: #1a2b49; font-size: 13px; text-transform: uppercase;\">Amount (AED)</td>\n                                </tr>\n\n                                <!-- Vehicle Header -->\n                                <tr>\n                                    <td colspan=\"2\" style=\"padding: 15px 12px 5px 12px; font-weight: bold; color: #333333; font-size: 14px;\">\n                                        Vehicle 1: Sedan\n                                    </td>\n                                </tr>\n\n                                <!-- Item 1 -->\n                                <tr>\n                                    <td style=\"padding: 8px 12px 8px 24px; border-bottom: 1px solid #eeeeee; color: #555555; font-size: 14px;\">\n                                        Hood - Hail Damage (DPR + Repaint)\n                                    </td>\n                                    <td align=\"right\" style=\"padding: 8px 12px; border-bottom: 1px solid #eeeeee; color: #333333; font-size: 14px;\">\n                                        450.00\n                                    </td>\n                                </tr>\n\n                                <!-- Item 2 -->\n                                <tr>\n                                    <td style=\"padding: 8px 12px 8px 24px; border-bottom: 1px solid #eeeeee; color: #555555; font-size: 14px;\">\n                                        Windshield - Broken (Full Replacement)\n                                    </td>\n                                    <td align=\"right\" style=\"padding: 8px 12px; border-bottom: 1px solid #eeeeee; color: #333333; font-size: 14px;\">\n                                        600.00\n                                    </td>\n                                </tr>\n\n                                <!-- Subtotal -->\n                                <tr>\n                                    <td align=\"right\" style=\"padding: 15px 12px 5px 12px; font-weight: bold; color: #666666; font-size: 13px; text-transform: uppercase;\">Subtotal</td>\n                                    <td align=\"right\" style=\"padding: 15px 12px 5px 12px; font-weight: bold; color: #666666; font-size: 14px;\">1,050.00</td>\n                                </tr>\n\n                                <!-- Grand Total -->\n                                <tr>\n                                    <td align=\"right\" style=\"padding: 5px 12px 20px 12px; border-top: 0;\"></td>\n                                    <td align=\"right\" style=\"padding: 5px 12px 20px 12px; border-top: 2px solid #1a2b49; color: #1a2b49; font-size: 18px; font-weight: bold; background-color: #fcfcfc;\">\n                                        <span style=\"font-size: 12px; font-weight: normal; vertical-align: middle; margin-right: 5px;\">AED</span>1,050.00\n                                    </td>\n                                </tr>\n                            </table>\n\n                        </td>\n                    </tr>\n\n                    <!-- Call to Action / Notes -->\n                    <tr>\n                        <td style=\"padding: 0 40px 30px 40px;\">\n                            <p style=\"margin: 0; font-size: 13px; color: #777777; font-style: italic; line-height: 1.5;\">\n                                <strong>Disclaimer:</strong> This is an autogenerated quotation based on preliminary data. All prices are approximate and not fixed. Final costs must be confirmed upon physical inspection of the vehicle(s) by our technical team.<br><br>\n                                * This quotation is valid for 14 days. Please contact us to schedule the repair at our nearest industrial facility.\n                            </p>\n                        </td>\n                    </tr>\n\n                    <!-- Footer Section -->\n                    <tr>\n                        <td align=\"center\" style=\"background-color: #1a2b49; padding: 30px 20px;\">\n                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\">\n                                <tr>\n                                    <td align=\"center\" style=\"color: #ffffff; font-size: 14px; font-weight: bold; padding-bottom: 10px;\">\n                                        TS Cars Globals\n                                    </td>\n                                </tr>\n                                <tr>\n                                    <td align=\"center\" style=\"color: #aebfd6; font-size: 12px; line-height: 1.6;\">\n                                        Smart Repair &bull; Major Damage &bull; Claims Management<br>\n                                        Serving Manufacturers & Insurers Globally\n                                    </td>\n                                </tr>\n                                <tr>\n                                    <td align=\"center\" style=\"padding-top: 20px;\">\n                                        <a href=\"#\" style=\"color: #ffffff; text-decoration: none; font-size: 12px; margin: 0 10px;\">Germany Office</a>\n                                        <span style=\"color: #4a5b79;\">|</span>\n                                        <a href=\"#\" style=\"color: #ffffff; text-decoration: none; font-size: 12px; margin: 0 10px;\">UAE Office</a>\n                                        <span style=\"color: #4a5b79;\">|</span>\n                                        <a href=\"#\" style=\"color: #ffffff; text-decoration: none; font-size: 12px; margin: 0 10px;\">Japan Office</a>\n                                    </td>\n                                </tr>\n                                <tr>\n                                    <td align=\"center\" style=\"padding-top: 20px; color: #5c6f91; font-size: 11px;\">\n                                        &copy; 2025 TS Cars Globals. All rights reserved.\n                                    </td>\n                                </tr>\n                            </table>\n                        </td>\n                    </tr>\n\n                </table>\n                <!-- End Main Email Container -->\n\n            </td>\n        </tr>\n    </table>\n\n</body>\n</html>\""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        2416,
+        1536
+      ],
+      "id": "b5e88b1b-e64a-4c84-a7f9-40e3304075ff",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        1776
+      ],
+      "id": "4c76522d-0478-4d7e-8867-20180fea7e7d",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7jdgvVkhxotqYHsh",
+          "name": "apextelen8n"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "mistralai/devstral-2512:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2288,
+        1776
+      ],
+      "id": "b70b549f-2957-4651-97d9-252b3900f7eb",
+      "name": "OpenRouter Chat Model2",
+      "credentials": {
+        "openRouterApi": {
+          "id": "XwYP0GX06MsCWy21",
+          "name": "TS OpenRouter 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 📧 Workflow 3: Gmail Quotation Dispatcher\nDescription: This workflow is triggered internally by the Main Workflow. It generates a professional HTML email body and dispatches it via the official Gmail API.",
+        "height": 176,
+        "width": 352
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2320,
+        1312
+      ],
+      "typeVersion": 1,
+      "id": "4ca798c0-4efb-4fa2-bd0e-30f51c70694a",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Input Layer\nWhen Executed by Another Workflow:\n\nRole: Accepts JSON inputs passed from the Main Workflow.\n\nData: email, name, damage_details_assessment, booking_time_if_given.",
+        "height": 240,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1856,
+        1488
+      ],
+      "typeVersion": 1,
+      "id": "626e8012-93bc-478b-b5f4-d64ea75da43e",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Email Composition (AI Agent)\nAI Agent (Email Drafter):\n\nRole: Prepares the email content.\n\nSystem Prompt: Similar to the PDF workflow, it holds the HTML email template. It ensures the email looks professional on mobile and desktop clients.\n\nModels:\n\nGoogle Gemini 2.0 Flash Lite: Primary model for fast generation.\n\nOpenRouter: configured as a backup.",
+        "height": 320,
+        "width": 480,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2288,
+        1968
+      ],
+      "typeVersion": 1,
+      "id": "c08ce62e-75d5-447c-9c3a-4ce7c04ba461",
+      "name": "Sticky Note13"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Delivery Mechanism\nSend a message in Gmail (Tool):\n\nAction: The Agent calls this tool once the HTML body is ready.\n\nParameters:\n\nTo: Extracted from input.\n\nSubject: generated by the Agent (e.g., \"Your Service Quotation - TS Cars\").\n\nMessage: The HTML string generated by the Agent.\n\nCredentials: Requires Gmail OAuth2 authentication.",
+        "height": 368,
+        "width": 400,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2848,
+        1520
+      ],
+      "typeVersion": 1,
+      "id": "58317250-ba67-4e72-a3ce-b72def15c276",
+      "name": "Sticky Note14"
+    }
+  ],
+  "pinData": {
+    "Main Trigger": [
+      {
+        "json": {
+          "update_id": 871388704,
+          "message": {
+            "message_id": 1266,
+            "from": {
+              "id": 8430909824,
+              "is_bot": false,
+              "first_name": "F",
+              "last_name": "Sheikh",
+              "language_code": "en"
+            },
+            "chat": {
+              "id": 8430909824,
+              "first_name": "F",
+              "last_name": "Sheikh",
+              "type": "private"
+            },
+            "date": 1765825335,
+            "text": "can you send me on telegram as well the quatation"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Main Trigger": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Image or Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image or Text": {
+      "main": [
+        [
+          {
+            "node": "Text Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Image whom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image whom": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Image input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet in Google Sheets": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail-email sending": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML to PDF": {
+      "main": [
+        [
+          {
+            "node": "Send a document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a document": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "HTML to PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e880ac29-41d8-452a-ad30-5fc87e860b94",
+  "meta": {
+    "instanceId": "810931c2f288c909324a29f73011243db6eec57590b5a4056ff9e4ed19f7dbd3"
+  },
+  "id": "t4oosEbRwRe8xkwZ",
+  "tags": [
+    {
+      "name": "DRS",
+      "id": "G3xpfePiMmTErE8L",
+      "updatedAt": "2025-12-16T03:28:40.223Z",
+      "createdAt": "2025-12-16T03:28:40.223Z"
+    }
+  ]
+}
