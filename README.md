@@ -20,7 +20,8 @@ This project is a fully automated **AI Service Advisor**. Instead of waiting day
 The system uses **Computer Vision** to detect damage, **Agentic AI** to look up repair costs in a database, and **Automation Tools** to book appointments and generate formal PDF quotations instantly.
 
 It is built on a **Microservices Architecture** using n8n, separating the "Brain" (The Agent) from the "Hands" (Document Generation & Emailing).
-
+I have A version 2.0 as well though I wont be releasing it online soon but here's the documentaion link - https://tinyurl.com/TS2071
+though if you want to see and use it mail me at talhatalha1971@gmail.com
 ---
 
 ## ✨ Key Features
